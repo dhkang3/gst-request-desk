@@ -31,7 +31,7 @@
     }
 
     * { box-sizing: border-box; }
-
+    
     html, body {
       margin: 0; padding: 0;
       font-family: "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -1057,6 +1057,7 @@
       const emp=answerFilteredList[i];answerSelectedEmployee=emp;
       document.getElementById('answerHandler').value=emp.name;
       const e2=document.getElementById('answerHandlerEmail');e2.value=emp.email;
+      e2.removeAttribute('readonly');
       document.getElementById('answerAutocompleteList').classList.remove('show');
     }
 
@@ -1239,7 +1240,7 @@
     async function finalSubmit(){
       if(!formSnapshot)formSnapshot=collectFormData();
       const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='접수 중...';
-      try{await fetch(GAS_WEB_APP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'submit',data:formSnapshot})});}catch(e){}
+      try{await fetch(GAS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'submit',data:formSnapshot})});}catch(e){}
 
       submittedInfo={requestNo:formSnapshot.requestNo,submittedAt:formatDateTime(new Date())};
       document.getElementById('submittedNo').textContent=`접수번호 ${submittedInfo.requestNo}`;
@@ -1581,7 +1582,7 @@
         }
       };
 
-      try{await fetch(GAS_WEB_APP_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(answerData)});}catch(e){}
+      try{await fetch(GAS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(answerData)});}catch(e){}
 
       document.getElementById('answerDoneNo').textContent = `접수번호 ${reqNo}`;
       document.getElementById('answerDoneAt').textContent = `답변시각 ${formatDateTime(new Date())}`;
