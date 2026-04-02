@@ -949,23 +949,35 @@
     }
 
     function normalizeRecord(row) {
-      const safeRow = row && typeof row === 'object' ? row : {};
-      const requester = String(safeRow.requesterName || safeRow.requester || '').trim();
-      const requestContentHTML = String(safeRow.requestContentHTML || '').trim();
-      const requestContent = String(safeRow.requestContent || safeRow.content || '').trim();
+      try {
+        const safeRow = row && typeof row === 'object' ? row : {};
+        // GAS rowToObj는 requester와 requesterName 둘 다 반환하지만
+        // 어느 쪽이 비어있어도 안전하게 처리
+        const requester = String(safeRow.requesterName || safeRow.requester || '').trim();
+        const requestContentHTML = String(safeRow.requestContentHTML || '').trim();
+        // GAS는 content 키로 반환 — requestContent도 같이 지원
+        const requestContent = String(safeRow.requestContent || safeRow.content || '').trim();
 
-      return {
-        ...safeRow,
-        requesterName: requester,
-        requester,
-        content: requestContent || stripHtmlTags(requestContentHTML),
-        requestContent: requestContent || stripHtmlTags(requestContentHTML),
-        requestContentHTML
-      };
+        return {
+          ...safeRow,
+          requesterName: requester,
+          requester,
+          content: requestContent || stripHtmlTags(requestContentHTML),
+          requestContent: requestContent || stripHtmlTags(requestContentHTML),
+          requestContentHTML,
+          // requestNo가 숫자/Date로 올 경우 문자열로 강제 변환
+          requestNo: String(safeRow.requestNo || ''),
+        };
+      } catch(e) {
+        console.warn('normalizeRecord 오류 (해당 행 건너뜀):', e, row);
+        return null;
+      }
     }
 
     function normalizeRecords(rows) {
-      return Array.isArray(rows) ? rows.map(normalizeRecord) : [];
+      if (!Array.isArray(rows)) return [];
+      // normalizeRecord가 null을 반환한 오류 행은 제거
+      return rows.map(normalizeRecord).filter(r => r !== null && r.requestNo !== '');
     }
 
     function isRequestNoKeyword(value) {
@@ -1007,7 +1019,11 @@
       try {
         const json = await fetchJsonWithTimeout(`${GAS_WEB_APP_URL}?action=getAll&_=${Date.now()}`);
         if (json && json.success && Array.isArray(json.data)) {
-          return normalizeRecords(json.data);
+          const normalized = normalizeRecords(json.data);
+          if (normalized.length === 0 && json.data.length > 0) {
+            console.warn('getAllData: 데이터를 받았지만 normalizeRecords 후 0건. 원본 샘플:', json.data[0]);
+          }
+          return normalized;
         }
         console.warn('getAllData: 응답 형식 이상', json);
         return [];
@@ -1514,7 +1530,13 @@
           statusEl.innerHTML = '<span style="color:var(--danger);font-weight:700;">❌ 서버에서 데이터를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.</span>';
           return;
         }
-        requesterRequestsList = sortRequestsNewestFirst(allData.filter(d => String(d.requesterName || d.requester || '').includes(keyword)));
+        // requesterName 또는 requester 어느 키로든 매칭
+        requesterRequestsList = sortRequestsNewestFirst(
+          allData.filter(d => {
+            const name = String(d.requesterName || d.requester || '').trim();
+            return name.includes(keyword);
+          })
+        );
       }
 
       if (!requesterRequestsList.length) {
@@ -1724,7 +1746,13 @@
           statusEl.innerHTML = '<span style="color:var(--danger);font-weight:700;">❌ 서버에서 데이터를 불러올 수 없습니다. 잠시 후 다시 시도해주세요.</span>';
           return;
         }
-        inquiryRequestsList = sortRequestsNewestFirst(allData.filter(d => String(d.requesterName || d.requester || '').includes(keyword)));
+        // requesterName 또는 requester 어느 키로든 매칭
+        inquiryRequestsList = sortRequestsNewestFirst(
+          allData.filter(d => {
+            const name = String(d.requesterName || d.requester || '').trim();
+            return name.includes(keyword);
+          })
+        );
       }
 
       if (!inquiryRequestsList.length) {
