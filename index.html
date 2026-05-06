@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1105,24 +1106,67 @@
     // 설정
     // ══════════════════════════════════════════════════════════════
     const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyuu3Gmxrx2ystRvdnFQ6JxyLOyFsQhGFBLReQXrjx1Kouuoy4FJknetEVxwuOVfYcu/exec';
+    // ※ GAS(Google Apps Script)에 아래 액션을 추가해야 직원 연동이 작동합니다:
+    //   action=getEmployees → '직원정보' 시트를 읽어 { name,dept,email,rank,title } 배열 반환
+    //   (GAS 코드 예시는 아래 주석 블록 참고)
+    /*
+    ── GAS doGet 핸들러에 추가할 코드 ──────────────────────────────
+    if (action === 'getEmployees') {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sh = ss.getSheetByName('직원정보');
+      if (!sh) return jsonResponse({ success: false, message: '직원정보 시트 없음' });
+      const rows = sh.getDataRange().getValues();
+      const header = rows[0]; // [이름, 부서, 이메일, 직급, 직책]
+      const iName  = header.indexOf('이름');
+      const iDept  = header.indexOf('부서');
+      const iEmail = header.indexOf('이메일');
+      const iRank  = header.indexOf('직급');
+      const iTitle = header.indexOf('직책');
+      const data = rows.slice(1).map(r => ({
+        name:  r[iName]  || '',
+        dept:  r[iDept]  || '',
+        email: r[iEmail] || '',
+        rank:  r[iRank]  || '',
+        title: r[iTitle] || ''
+      })).filter(e => e.name);
+      return jsonResponse({ success: true, data });
+    }
+    ────────────────────────────────────────────────────────────────
+    */
 
     // ══════════════════════════════════════════════════════════════
-    // ▼▼▼ 직원 자동완성 데이터 ▼▼▼
-    // 형식: { name: '이름', dept: '부서명', email: 'email@example.com' }
-    // 대량 추가 시 이 배열에 객체를 계속 추가하면 됩니다.
-    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+    // 직원 자동완성 데이터 — 구글 시트 '직원정보' 시트에서 자동 로드
+    // 형식: { name, dept, email, rank, title }
     // ══════════════════════════════════════════════════════════════
-    const employees = [
-      { name: '강다현', dept: '기술연구소', email: 'dhkang3@gst-in.com' },
-      { name: '안은솔', dept: '기술연구소', email: 'esan@gst-in.com' },
-      { name: '채명기', dept: '기술연구소', email: 'mkchae1@gst-in.com' },
-      { name: '전정국', dept: '스크러버1팀', email: 'dhkang3@gst-in.com' },
-      { name: '박지민', dept: '스크러버2팀', email: 'esan@gst-in.com' },
-      { name: '김석진', dept: '스크러버3팀', email: 'mkchae1@gst-in.com' }
-      // ▲▲▲ 여기에 직원을 계속 추가하세요 ▲▲▲
-    ];
-    // ══════════════════════════════════════════════════════════════
-    // ▲▲▲ 직원 자동완성 데이터 끝 ▲▲▲
+    let employees = [];   // 로드 완료 후 채워짐
+    let _employeesLoaded = false;
+
+    async function loadEmployees() {
+      if (_employeesLoaded) return;
+      try {
+        const res  = await fetch(`${GAS_WEB_APP_URL}?action=getEmployees&_=${Date.now()}`, { cache: 'no-store' });
+        const json = await res.json();
+        if (json && json.success && Array.isArray(json.data)) {
+          employees = json.data.map(r => ({
+            name:  String(r.name  || r['이름']  || '').trim(),
+            dept:  String(r.dept  || r['부서']  || '').trim(),
+            email: String(r.email || r['이메일'] || '').trim(),
+            rank:  String(r.rank  || r['직급']  || '').trim(),
+            title: String(r.title || r['직책']  || '').trim()
+          })).filter(e => e.name);
+          _employeesLoaded = true;
+          // 부서 드롭다운도 직원 목록 기준으로 갱신
+          const depts = [...new Set(employees.map(e => e.dept).filter(Boolean))].sort();
+          deptList = depts;
+          populateDeptSelect('answerPart', depts);
+        }
+      } catch(e) {
+        console.warn('직원 목록 로드 실패:', e);
+      }
+    }
+
+    // 페이지 로드 시 즉시 직원 목록 불러오기
+    loadEmployees();
     // ══════════════════════════════════════════════════════════════
 
     let selectedEmployee = null, autocompleteIndex = -1, filteredList = [];
@@ -1298,6 +1342,13 @@
       d.placeholder='부서명 입력';e2.placeholder='이메일 입력';
       const list=document.getElementById('autocompleteList');
       if(!val.trim()){d.value='';e2.value='';list.classList.remove('show');return;}
+      // 직원 목록 아직 로드 전이면 로드 후 재시도
+      if(!_employeesLoaded){
+        list.innerHTML='<div class="autocomplete-item"><span class="meta">직원 목록 로딩 중...</span></div>';
+        list.classList.add('show');
+        loadEmployees().then(()=>handleNameInput(val));
+        return;
+      }
       filteredList=employees.filter(e=>e.name.includes(val));
       autocompleteIndex=-1;
       if(!filteredList.length){list.classList.remove('show');return;}
@@ -1333,6 +1384,13 @@
       const e2=document.getElementById('answerHandlerEmail');e2.removeAttribute('readonly');e2.placeholder='이메일 입력';
       const list=document.getElementById('answerAutocompleteList');
       if(!val.trim()){e2.value='';list.classList.remove('show');return;}
+      // 직원 목록 아직 로드 전이면 로드 후 재시도
+      if(!_employeesLoaded){
+        list.innerHTML='<div class="autocomplete-item"><span class="meta">직원 목록 로딩 중...</span></div>';
+        list.classList.add('show');
+        loadEmployees().then(()=>handleAnswerNameInput(val));
+        return;
+      }
       answerFilteredList=employees.filter(e=>e.name.includes(val));answerAutocompleteIndex=-1;
       if(!answerFilteredList.length){list.classList.remove('show');return;}
       list.innerHTML=answerFilteredList.map((emp,i)=>`<div class="autocomplete-item" onmousedown="selectAnswerEmployee(${i})" onmouseover="setAnswerActiveIndex(${i})"><span class="name">${emp.name}</span><span class="meta">${emp.dept} · ${emp.email}</span></div>`).join('');
@@ -1370,9 +1428,9 @@
     // ▼▼▼ 부서 목록 데이터 (담당파트 드롭다운용) ▼▼▼
     // ══════════════════════════════════════════════════════════════
     function initDeptDropdown() {
-      const depts = [...new Set(employees.map(e => e.dept))].sort();
-      deptList = depts;
-      populateDeptSelect('answerPart', depts);
+      // 직원 목록은 loadEmployees()가 페이지 로드 시 자동으로 불러옴.
+      // 로드 완료 시 populateDeptSelect도 자동 갱신됨.
+      // GAS에서 별도 부서 목록도 병행 조회 (직원 로드 실패 대비 fallback)
       fetch(GAS_WEB_APP_URL + '?action=getDeptList')
         .then(res => res.json())
         .then(json => { if (json.success && json.data) updateDeptList(json.data); })
